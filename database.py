@@ -157,3 +157,23 @@ class DatabaseManager:
             limit,
         )
         return items
+
+    async def count_items(self) -> dict[str, int]:
+        """
+        Підраховує загальну кількість товарів та розбивку за платформами:
+        {'total': int, 'olx': int, 'prom': int}
+        """
+        stats: dict[str, int] = {"total": 0, "olx": 0, "prom": 0}
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("SELECT COUNT(*) FROM items")
+            total_row = await cursor.fetchone()
+            if total_row:
+                stats["total"] = total_row[0]
+
+            cursor = await db.execute("SELECT platform, COUNT(*) FROM items GROUP BY platform")
+            rows = await cursor.fetchall()
+            for platform_name, count in rows:
+                stats[platform_name] = count
+
+        logger.info("Database statistics: %s", stats)
+        return stats
