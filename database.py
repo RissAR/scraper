@@ -143,11 +143,35 @@ class DatabaseManager:
                 platform_val = platform.value if isinstance(platform, Platform) else str(platform)
                 query = "SELECT * FROM items WHERE platform = ? ORDER BY scraped_at DESC LIMIT ?"
                 cursor = await db.execute(query, (platform_val, limit))
+                rows = await cursor.fetchall()
             else:
-                query = "SELECT * FROM items ORDER BY scraped_at DESC LIMIT ?"
-                cursor = await db.execute(query, (limit,))
+                per_platform_limit = max(limit // 2, 1)
+                query = """
+                SELECT id, platform, external_id, title, price, currency, url, image_url, location, is_promoted, scraped_at
+                FROM (
+                    SELECT *, ROW_NUMBER() OVER (PARTITION BY platform ORDER BY scraped_at DESC) as rn
+                    FROM items
+                )
+                WHERE rn <= ?
+                ORDER BY scraped_at DESC
+                LIMIT ?
+                """
+                cursor = await db.execute(query, (per_platform_limit, limit))
+                rows = list(await cursor.fetchall())
 
-            rows = await cursor.fetchall()
+                if len(rows) < limit and rows:
+                    existing_ids = [r["id"] for r in rows]
+                    placeholders = ",".join("?" for _ in existing_ids)
+                    fill_query = f"""
+                    SELECT id, platform, external_id, title, price, currency, url, image_url, location, is_promoted, scraped_at
+                    FROM items
+                    WHERE id NOT IN ({placeholders})
+                    ORDER BY scraped_at DESC
+                    LIMIT ?
+                    """
+                    fill_cur = await db.execute(fill_query, (*existing_ids, limit - len(rows)))
+                    additional_rows = await fill_cur.fetchall()
+                    rows.extend(additional_rows)
 
         items: list[ProductItem] = [ProductItem(**dict(row)) for row in rows]
         logger.info(
