@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  scraper_bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: olx_prom_scraper_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Монтування локальної папки data/ для персистентності SQLite БД та звітів Excel
+      - ./data:/app/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
